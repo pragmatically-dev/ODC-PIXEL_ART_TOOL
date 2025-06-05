@@ -1,0 +1,1992 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editor de Pixel Art</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for the canvas and overall layout */
+        body {
+            font-family: "Inter", sans-serif;
+            background-color: #1a202c; /* Dark background */
+            color: #e2e8f0; /* Light text */
+            display: flex;
+            justify-content: center;
+            align-items: flex-start; /* Align to top to give space for controls */
+            min-height: 100vh;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            max-width: 1200px;
+            width: 100%;
+            align-items: center;
+        }
+        .canvas-container {
+            border: 1px solid #4a5568;
+            background-color: #2d3748;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            border-radius: 0.5rem;
+            overflow: hidden; /* Ensure content stays within rounded corners */
+            width: 640px; /* Fixed width for the canvas wrapper */
+            height: 480px; /* Fixed height for the canvas wrapper */
+            position: relative;
+            cursor: crosshair;
+        }
+        canvas {
+            display: block;
+            background-color: #ffffff; /* White background for the drawing area */
+            image-rendering: pixelated; /* Ensures crisp pixels */
+            /* Canvas dimensions are set by JS based on PIXEL_DRAW_SIZE and zoomLevel */
+            transform-origin: 0 0; /* Set origin for scaling */
+        }
+        .controls, .tool-selection, .color-palette-container, .zoom-controls, .undo-redo-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            justify-content: center;
+            align-items: center;
+            padding: 15px;
+            background-color: #2d3748;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 640px; /* Match canvas width */
+        }
+        .color-palette-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(30px, 1fr));
+            gap: 8px;
+            padding: 10px;
+            background-color: #1a202c;
+            border-radius: 0.375rem;
+            width: 100%;
+        }
+        .color-swatch {
+            width: 30px;
+            height: 30px;
+            border-radius: 0.25rem;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: border-color 0.1s ease-in-out;
+        }
+        .color-swatch.selected {
+            border-color: #4299e1; /* Highlight selected color */
+        }
+        .code-output {
+            width: 100%;
+            max-width: 640px; /* Match canvas width */
+            background-color: #2d3748;
+            border-radius: 0.5rem;
+            padding: 15px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        textarea {
+            width: 100%;
+            height: 300px;
+            background-color: #1a202c;
+            border: 1px solid #4a5568;
+            border-radius: 0.25rem;
+            padding: 10px;
+            font-family: monospace;
+            color: #e2e8f0;
+            resize: vertical;
+        }
+        button {
+            padding: 10px 20px;
+            border-radius: 0.375rem;
+            font-weight: 600;
+            transition: background-color 0.2s ease-in-out;
+            cursor: pointer;
+            background-color: #4299e1; /* Blue */
+            color: #ffffff;
+            border: none;
+        }
+        button:hover {
+            background-color: #3182ce; /* Darker blue */
+        }
+        button:disabled {
+            background-color: #6b7280; /* Gray for disabled */
+            cursor: not-allowed;
+        }
+        input[type="color"] {
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            width: 40px;
+            height: 40px;
+            background-color: transparent;
+            border: none;
+            cursor: pointer;
+            border-radius: 0.375rem;
+            overflow: hidden;
+            padding: 0;
+        }
+        input[type="color"]::-webkit-color-swatch-wrapper {
+            padding: 0;
+        }
+        input[type="color"]::-webkit-color-swatch {
+            border: none;
+            border-radius: 0.375rem;
+        }
+        input[type="color"]::-moz-color-swatch-wrapper {
+            padding: 0;
+        }
+        input[type="color"]::-moz-color-swatch {
+            border: none;
+            border-radius: 0.375rem;
+        }
+        .info-display {
+            display: flex;
+            gap: 10px;
+            font-size: 0.9rem;
+            color: #a0aec0;
+        }
+        .tool-selection label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            cursor: pointer;
+            padding: 8px 12px;
+            border-radius: 0.375rem;
+            background-color: #4a5568;
+            color: #e2e8f0;
+            transition: background-color 0.2s ease-in-out;
+        }
+        .tool-selection input[type="radio"]:checked + label {
+            background-color: #3182ce; /* Darker blue when selected */
+        }
+        .tool-selection input[type="radio"] {
+            display: none; /* Hide native radio button */
+        }
+        @media (min-width: 768px) {
+            .container {
+                flex-direction: row;
+                align-items: flex-start;
+                justify-content: center;
+            }
+            .left-panel, .right-panel {
+                display: flex;
+                flex-direction: column;
+                gap: 20px;
+            }
+            .left-panel {
+                margin-right: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="left-panel">
+            <div class="canvas-container">
+                <canvas id="pixelCanvas" width="640" height="480"></canvas>
+            </div>
+            <div class="tool-selection">
+                <span class="text-sm font-medium">Herramienta:</span>
+                <input type="radio" id="toolPixel" name="tool" value="pixel" checked>
+                <label for="toolPixel" class="rounded-md hover:bg-gray-600">Píxel</label>
+
+                <input type="radio" id="toolRectangle" name="tool" value="rectangle">
+                <label for="toolRectangle" class="rounded-md hover:bg-gray-600">Rectángulo</label>
+
+                <input type="radio" id="toolCircle" name="tool" value="circle">
+                <label for="toolCircle" class="rounded-md hover:bg-gray-600">Círculo</label>
+
+                <input type="radio" id="toolLine" name="tool" value="line">
+                <label for="toolLine" class="rounded-md hover:bg-gray-600">Línea</label>
+
+                <input type="radio" id="toolSelect" name="tool" value="select">
+                <label for="toolSelect" class="rounded-md hover:bg-gray-600">Seleccionar/Mover/Escalar</label>
+            </div>
+            <div class="controls">
+                <label for="colorPicker" class="text-sm font-medium">Color:</label>
+                <input type="color" id="colorPicker" value="#000000" class="rounded-md">
+                <button id="addPaletteColorButton" class="bg-blue-500 hover:bg-blue-600 text-sm py-2 px-3 rounded-md">Añadir a Paleta</button>
+                <button id="removePaletteColorButton" class="bg-red-500 hover:bg-red-600 text-sm py-2 px-3 rounded-md" disabled>Eliminar de Paleta</button>
+                <div class="color-palette-container" id="colorPalette">
+                    <!-- Color swatches will be inserted here by JavaScript -->
+                </div>
+                <button id="clearButton" class="bg-red-500 hover:bg-red-600">Borrar Lienzo</button>
+                <button id="generateCodeButton" class="bg-green-500 hover:bg-green-600">Generar Código</button>
+                <div class="info-display">
+                    <span id="coords">X: 0, Y: 0</span>
+                    <span id="colorHex">Color: #000000</span>
+                </div>
+            </div>
+            <div class="zoom-controls">
+                <span class="text-sm font-medium">Zoom:</span>
+                <button id="zoomOutButton" class="bg-gray-600 hover:bg-gray-700">-</button>
+                <span id="zoomLevelDisplay">1x</span>
+                <button id="zoomInButton" class="bg-gray-600 hover:bg-gray-700">+</button>
+            </div>
+            <div class="undo-redo-controls">
+                <button id="undoButton" class="bg-gray-600 hover:bg-gray-700" disabled>Deshacer (Ctrl+Z)</button>
+                <button id="redoButton" class="bg-gray-600 hover:bg-gray-700" disabled>Rehacer (Ctrl+Y)</button>
+            </div>
+        </div>
+        <div class="right-panel">
+            <div class="code-output">
+                <h2 class="text-xl font-bold mb-4">Código de Ensamblaje Generado</h2>
+                <textarea id="assemblyCodeOutput" readonly></textarea>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Get canvas and context
+        const canvas = document.getElementById('pixelCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Get control elements
+        const colorPicker = document.getElementById('colorPicker');
+        const clearButton = document.getElementById('clearButton');
+        const generateCodeButton = document.getElementById('generateCodeButton');
+        const assemblyCodeOutput = document.getElementById('assemblyCodeOutput');
+        const coordsDisplay = document.getElementById('coords');
+        const colorHexDisplay = document.getElementById('colorHex');
+        const colorPaletteContainer = document.getElementById('colorPalette');
+        const zoomInButton = document.getElementById('zoomInButton');
+        const zoomOutButton = document.getElementById('zoomOutButton');
+        const zoomLevelDisplay = document.getElementById('zoomLevelDisplay');
+        const addPaletteColorButton = document.getElementById('addPaletteColorButton');
+        const removePaletteColorButton = document.getElementById('removePaletteColorButton');
+        const undoButton = document.getElementById('undoButton');
+        const redoButton = document.getElementById('redoButton');
+
+        // Tool selection elements
+        const toolRadios = document.querySelectorAll('input[name="tool"]');
+
+        // Canvas dimensions (logical, not scaled)
+        const CANVAS_WIDTH = 640;
+        const CANVAS_HEIGHT = 480;
+
+        // Pixel drawing size (logical pixel will be rendered as this many actual canvas pixels)
+        const PIXEL_DRAW_SIZE = 4;
+
+        // Set canvas dimensions explicitly for drawing logic (actual canvas resolution)
+        canvas.width = CANVAS_WIDTH * PIXEL_DRAW_SIZE;
+        canvas.height = CANVAS_HEIGHT * PIXEL_DRAW_SIZE;
+
+        // State variables
+        let currentColor = colorPicker.value; // Default color
+        let currentTool = 'pixel'; // Default tool
+        let isDrawing = false; // True when drawing a new shape
+        let isDragging = false; // True when dragging a selected shape or selection box
+        let isResizing = false; // True when resizing a selected shape
+        let isPanning = false; // True when middle mouse button is pressed for panning
+        let resizeHandle = ''; // Stores which handle is being dragged (e.g., 'nw', 'se')
+        let startPoint = { x: 0, y: 0 }; // Logical coordinates for start of drag/draw
+        let lastPanPoint = { x: 0, y: 0 }; // Screen coordinates for panning
+        let panOffset = { x: 0, y: 0 }; // Accumulative pan offset in physical canvas pixels
+        let currentPreviewShape = null; // For dynamic preview of new shapes (rectangle, circle, line)
+        let selectionBoxStartPoint = null; // For drawing a selection box
+        let isDrawingSelectionBox = false; // True when user is dragging to draw a selection box
+
+        let selectedShapes = []; // Stores the currently selected shape objects (can be multiple)
+        let initialSelectedShapesState = []; // Stores the state of selected shapes when dragging/resizing starts
+
+        // Array to store drawn shapes
+        let drawnShapes = []; // This will be updated from history
+
+        // History for undo/redo
+        let history = [];
+        let historyIndex = -1;
+        const MAX_HISTORY_STATES = 50; // Limit history to prevent excessive memory usage
+
+        // Zoom variables
+        let zoomLevel = 1;
+        const MIN_ZOOM = 1;
+        const MAX_ZOOM = 16; // Max zoom for practical pixel editing
+        const GRID_THRESHOLD_ZOOM = 0.6; // Show grid when zoom is 0.6x or more (considering PIXEL_DRAW_SIZE)
+
+        // Predefined color palette (will be updated by user)
+        let colorPalette = [
+            '#000000', '#FFFFFF', '#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#00FFFF', '#FF00FF',
+            '#C0C0C0', '#808080', '#800000', '#008000', '#000080', '#808000', '#008080', '#800080',
+            '#FFA500', '#A52A2A', '#00CED1', '#FFD700', '#DA70D6', '#7CFC00'
+        ];
+
+        // Function to update the color display
+        function updateColorDisplay() {
+            colorHexDisplay.textContent = `Color: ${currentColor.toUpperCase()}`;
+            // Update color picker value to reflect current color
+            colorPicker.value = currentColor;
+
+            // Update selected swatch in palette
+            document.querySelectorAll('.color-swatch').forEach(swatch => {
+                if (swatch.dataset.color === currentColor.toUpperCase()) {
+                    swatch.classList.add('selected');
+                } else {
+                    swatch.classList.remove('selected');
+                }
+            });
+
+            // Check if current color is in palette to enable/disable remove button
+            if (colorPalette.includes(currentColor.toUpperCase())) {
+                removePaletteColorButton.disabled = false;
+            } else {
+                removePaletteColorButton.disabled = true;
+            }
+        }
+
+        // Function to draw a single pixel (1x1 logical pixel)
+        function drawPixel(x, y, color) {
+            ctx.fillStyle = color;
+            ctx.fillRect(x * PIXEL_DRAW_SIZE, y * PIXEL_DRAW_SIZE, PIXEL_DRAW_SIZE, PIXEL_DRAW_SIZE);
+        }
+
+        // Function to draw a rectangle
+        function drawRectangleOnCanvas(x, y, width, height, color) {
+            ctx.fillStyle = color;
+            ctx.fillRect(x * PIXEL_DRAW_SIZE, y * PIXEL_DRAW_SIZE, width * PIXEL_DRAW_SIZE, height * PIXEL_DRAW_SIZE);
+        }
+
+        // Function to draw a circle
+        function drawCircleOnCanvas(centerX, centerY, radius, color) {
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(centerX * PIXEL_DRAW_SIZE, centerY * PIXEL_DRAW_SIZE, radius * PIXEL_DRAW_SIZE, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // Function to draw a line
+        function drawLineOnCanvas(x1, y1, x2, y2, color, thickness = 1) {
+            ctx.strokeStyle = color;
+            ctx.lineWidth = thickness * PIXEL_DRAW_SIZE; // Scale line thickness
+            ctx.beginPath();
+            ctx.moveTo(x1 * PIXEL_DRAW_SIZE, y1 * PIXEL_DRAW_SIZE);
+            ctx.lineTo(x2 * PIXEL_DRAW_SIZE, y2 * PIXEL_DRAW_SIZE);
+            ctx.stroke();
+        }
+
+        // Function to draw the grid
+        function drawGrid() {
+            // Draw grid only if zoomed in enough
+            if (zoomLevel >= GRID_THRESHOLD_ZOOM) {
+                ctx.strokeStyle = '#4a5568'; // Grid color
+                ctx.lineWidth = 0.5; // Thin lines
+
+                // Draw vertical lines
+                for (let x = 0; x <= CANVAS_WIDTH; x++) {
+                    ctx.beginPath();
+                    ctx.moveTo(x * PIXEL_DRAW_SIZE + 0.5, 0);
+                    ctx.lineTo(x * PIXEL_DRAW_SIZE + 0.5, CANVAS_HEIGHT * PIXEL_DRAW_SIZE);
+                    ctx.stroke();
+                }
+
+                // Draw horizontal lines
+                for (let y = 0; y <= CANVAS_HEIGHT; y++) {
+                    ctx.beginPath();
+                    ctx.moveTo(0, y * PIXEL_DRAW_SIZE + 0.5);
+                    ctx.lineTo(CANVAS_WIDTH * PIXEL_DRAW_SIZE, y * PIXEL_DRAW_SIZE + 0.5);
+                    ctx.stroke();
+                }
+            }
+        }
+
+        // Function to calculate the bounding box of a single shape
+        function getShapeBoundingBox(shape) {
+            if (shape.type === 'pixel') {
+                return { x: shape.x, y: shape.y, width: 1, height: 1 };
+            } else if (shape.type === 'rectangle') {
+                return { x: shape.x, y: shape.y, width: shape.width, height: shape.height };
+            } else if (shape.type === 'circle') {
+                return { x: shape.centerX - shape.radius, y: shape.centerY - shape.radius, width: shape.radius * 2, height: shape.radius * 2 };
+            } else if (shape.type === 'line') {
+                return {
+                    x: Math.min(shape.x1, shape.x2),
+                    y: Math.min(shape.y1, shape.y2),
+                    width: Math.abs(shape.x1 - shape.x2) + 1,
+                    height: Math.abs(shape.y1 - shape.y2) + 1
+                };
+            }
+            return { x: 0, y: 0, width: 0, height: 0 }; // Default for unknown type
+        }
+
+        // Function to calculate the combined bounding box of multiple shapes
+        function getCombinedBoundingBox(shapes) {
+            if (shapes.length === 0) {
+                return { x: 0, y: 0, width: 0, height: 0 };
+            }
+
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+            shapes.forEach(shape => {
+                const bbox = getShapeBoundingBox(shape);
+                minX = Math.min(minX, bbox.x);
+                minY = Math.min(minY, bbox.y);
+                maxX = Math.max(maxX, bbox.x + bbox.width);
+                maxY = Math.max(maxY, bbox.y + bbox.height);
+            });
+
+            return {
+                x: minX,
+                y: minY,
+                width: maxX - minX,
+                height: maxY - minY
+            };
+        }
+
+        // Function to draw selection bounding box and resize handles
+        function drawSelectionBox(bbox) {
+            if (bbox.width === 0 || bbox.height === 0) return;
+
+            // Draw bounding box
+            ctx.strokeStyle = '#4299e1'; // Blue for selection
+            ctx.lineWidth = 1 * zoomLevel;
+            ctx.strokeRect(bbox.x * PIXEL_DRAW_SIZE, bbox.y * PIXEL_DRAW_SIZE, bbox.width * PIXEL_DRAW_SIZE, bbox.height * PIXEL_DRAW_SIZE);
+
+            // Draw resize handles (only for resizable shapes like rectangles/pixels)
+            // A group is resizable if it contains at least one resizable shape
+            const containsResizable = selectedShapes.some(s => s.type === 'pixel' || s.type === 'rectangle');
+
+            if (containsResizable) {
+                const handleSize = 3 * zoomLevel; // Size of the handle
+                ctx.fillStyle = '#4299e1'; // Blue handles
+
+                // Top-left
+                ctx.fillRect(bbox.x * PIXEL_DRAW_SIZE - handleSize / 2, bbox.y * PIXEL_DRAW_SIZE - handleSize / 2, handleSize, handleSize);
+                // Top-right
+                ctx.fillRect((bbox.x + bbox.width) * PIXEL_DRAW_SIZE - handleSize / 2, bbox.y * PIXEL_DRAW_SIZE - handleSize / 2, handleSize, handleSize);
+                // Bottom-left
+                ctx.fillRect(bbox.x * PIXEL_DRAW_SIZE - handleSize / 2, (bbox.y + bbox.height) * PIXEL_DRAW_SIZE - handleSize / 2, handleSize, handleSize);
+                // Bottom-right
+                ctx.fillRect((bbox.x + bbox.width) * PIXEL_DRAW_SIZE - handleSize / 2, (bbox.y + bbox.height) * PIXEL_DRAW_SIZE - handleSize / 2, handleSize, handleSize);
+            }
+        }
+
+
+        // Function to redraw all shapes from the drawnShapes array and current preview
+        function redrawCanvas() {
+            // Adjust canvas display size based on zoom level
+            canvas.style.width = `${CANVAS_WIDTH * PIXEL_DRAW_SIZE * zoomLevel}px`;
+            canvas.style.height = `${CANVAS_HEIGHT * PIXEL_DRAW_SIZE * zoomLevel}px`;
+
+            // Clear the entire canvas
+            ctx.clearRect(0, 0, CANVAS_WIDTH * PIXEL_DRAW_SIZE, CANVAS_HEIGHT * PIXEL_DRAW_SIZE);
+            // Set initial background color to white for the drawing area
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(0, 0, CANVAS_WIDTH * PIXEL_DRAW_SIZE, CANVAS_HEIGHT * PIXEL_DRAW_SIZE);
+
+            ctx.save(); // Save the current transformation state
+            ctx.translate(panOffset.x, panOffset.y); // Apply pan offset
+
+            drawnShapes.forEach(shape => {
+                if (shape.type === 'pixel') {
+                    drawPixel(shape.x, shape.y, shape.color);
+                } else if (shape.type === 'rectangle') {
+                    drawRectangleOnCanvas(shape.x, shape.y, shape.width, shape.height, shape.color);
+                } else if (shape.type === 'circle') {
+                    drawCircleOnCanvas(shape.centerX, shape.centerY, shape.radius, shape.color);
+                } else if (shape.type === 'line') {
+                    drawLineOnCanvas(shape.x1, shape.y1, shape.x2, shape.y2, shape.color);
+                }
+            });
+
+            // Draw current preview shape if exists (for drawing new shapes)
+            if (currentPreviewShape) {
+                if (currentPreviewShape.type === 'pixel') {
+                    drawPixel(currentPreviewShape.x, currentPreviewShape.y, currentPreviewShape.color);
+                } else if (currentPreviewShape.type === 'rectangle') {
+                    drawRectangleOnCanvas(currentPreviewShape.x, currentPreviewShape.y, currentPreviewShape.width, currentPreviewShape.height, currentPreviewShape.color);
+                } else if (currentPreviewShape.type === 'circle') {
+                    drawCircleOnCanvas(currentPreviewShape.centerX, currentPreviewShape.centerY, currentPreviewShape.radius, currentPreviewShape.color);
+                } else if (currentPreviewShape.type === 'line') {
+                    drawLineOnCanvas(currentPreviewShape.x1, currentPreviewShape.y1, currentPreviewShape.x2, currentPreviewShape.y2, currentPreviewShape.color);
+                }
+            }
+
+            // Draw selection box if a selection is active
+            if (selectedShapes.length > 0) {
+                const combinedBBox = getCombinedBoundingBox(selectedShapes);
+                drawSelectionBox(combinedBBox);
+            } else if (isDrawingSelectionBox && selectionBoxStartPoint) {
+                // Draw the temporary selection rectangle while dragging
+                const currentX = Math.floor(((event.clientX - canvas.getBoundingClientRect().left) - panOffset.x) / (PIXEL_DRAW_SIZE * zoomLevel));
+                const currentY = Math.floor(((event.clientY - canvas.getBoundingClientRect().top) - panOffset.y) / (PIXEL_DRAW_SIZE * zoomLevel));
+
+                const x = Math.min(selectionBoxStartPoint.x, currentX);
+                const y = Math.min(selectionBoxStartPoint.y, currentY);
+                const width = Math.abs(currentX - selectionBoxStartPoint.x);
+                const height = Math.abs(currentY - selectionBoxStartPoint.y);
+
+                ctx.strokeStyle = '#4299e1'; // Blue for selection box
+                ctx.lineWidth = 1 * zoomLevel;
+                ctx.setLineDash([2, 2]); // Dashed line
+                ctx.strokeRect(x * PIXEL_DRAW_SIZE, y * PIXEL_DRAW_SIZE, width * PIXEL_DRAW_SIZE, height * PIXEL_DRAW_SIZE);
+                ctx.setLineDash([]); // Reset line dash
+            }
+
+
+            drawGrid(); // Draw grid after shapes (it's also affected by translate)
+            ctx.restore(); // Restore the transformation state
+        }
+
+        // Function to check if a point is inside a shape (for selection)
+        function isPointInShape(pointX, pointY, shape) {
+            if (shape.type === 'pixel') {
+                return pointX === shape.x && pointY === shape.y;
+            } else if (shape.type === 'rectangle') {
+                return pointX >= shape.x && pointX < shape.x + shape.width &&
+                       pointY >= shape.y && pointY < shape.y + shape.height;
+            } else if (shape.type === 'circle') {
+                const dist = Math.sqrt(Math.pow(pointX - shape.centerX, 2) + Math.pow(pointY - shape.centerY, 2));
+                return dist <= shape.radius;
+            } else if (shape.type === 'line') {
+                // For lines, check if point is close to the line segment
+                const dX = shape.x2 - shape.x1;
+                const dY = shape.y2 - shape.y1;
+                const L2 = (dX * dX) + (dY * dY);
+                if (L2 === 0) return (pointX === shape.x1 && pointY === shape.y1); // It's a point
+                const t = ((pointX - shape.x1) * dX + (pointY - shape.y1) * dY) / L2;
+                if (t < 0 || t > 1) return false;
+                const closestX = shape.x1 + t * dX;
+                const closestY = shape.y1 + t * dY;
+                const distance = Math.sqrt(Math.pow(pointX - closestX, 2) + Math.pow(pointY - closestY, 2));
+                return distance < 2; // Tolerance for line selection
+            }
+            return false;
+        }
+
+        // Function to check if a point is inside a resize handle of a bounding box
+        function getHandleAtPoint(pointX, pointY, bbox) {
+            const handleSize = 3; // Logical size of the handle for hit detection
+            const halfHandle = handleSize / 2;
+
+            // Check top-left handle
+            if (pointX >= bbox.x - halfHandle && pointX <= bbox.x + halfHandle &&
+                pointY >= bbox.y - halfHandle && pointY <= bbox.y + halfHandle) {
+                return 'nw';
+            }
+            // Check top-right handle
+            if (pointX >= (bbox.x + bbox.width) - halfHandle && pointX <= (bbox.x + bbox.width) + halfHandle &&
+                pointY >= bbox.y - halfHandle && pointY <= bbox.y + halfHandle) {
+                return 'ne';
+            }
+            // Check bottom-left handle
+            if (pointX >= bbox.x - halfHandle && pointX <= bbox.x + halfHandle &&
+                pointY >= (bbox.y + bbox.height) - halfHandle && pointY <= (bbox.y + bbox.height) + halfHandle) {
+                return 'sw';
+            }
+            // Check bottom-right handle
+            if (pointX >= (bbox.x + bbox.width) - halfHandle && pointX <= (bbox.x + bbox.width) + halfHandle &&
+                pointY >= (bbox.y + bbox.height) - halfHandle && pointY <= (bbox.y + bbox.height) + halfHandle) {
+                return 'se';
+            }
+            return '';
+        }
+
+
+        // Function to get individual pixels for a circle (approximation)
+        function getPixelsForCircle(centerX, centerY, radius, color) {
+            const pixels = new Set(); // Use a Set to avoid duplicate pixels
+            // Iterate over a square enclosing the circle
+            for (let x = Math.floor(centerX - radius); x <= Math.ceil(centerX + radius); x++) {
+                for (let y = Math.floor(centerY - radius); y <= Math.ceil(centerY + radius); y++) {
+                    const dist = Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2));
+                    if (dist <= radius) {
+                        if (x >= 0 && x < CANVAS_WIDTH && y >= 0 && y < CANVAS_HEIGHT) {
+                            pixels.add(`${x},${y},${color}`); // Store as string for Set
+                        }
+                    }
+                }
+            }
+            return Array.from(pixels).map(p => {
+                const parts = p.split(',');
+                return { x: parseInt(parts[0]), y: parseInt(parts[1]), color: parts[2] };
+            });
+        }
+
+        // Function to get individual pixels for a line (Bresenham's algorithm simplified)
+        function getPixelsForLine(x1, y1, x2, y2, color) {
+            const pixels = [];
+            const dx = Math.abs(x2 - x1);
+            const dy = Math.abs(y2 - y1);
+            const sx = (x1 < x2) ? 1 : -1;
+            const sy = (y1 < y2) ? 1 : -1;
+            let err = dx - dy;
+
+            let currentX = x1;
+            let currentY = y1;
+
+            while (true) {
+                if (currentX >= 0 && currentX < CANVAS_WIDTH && currentY >= 0 && currentY < CANVAS_HEIGHT) {
+                    pixels.push({ x: currentX, y: currentY, color: color });
+                }
+
+                if (currentX === x2 && currentY === y2) break;
+                const e2 = 2 * err;
+                if (e2 > -dy) {
+                    err -= dy;
+                    currentX += sx;
+                }
+                if (e2 < dx) {
+                    err += dx;
+                    currentY += sy;
+                }
+            }
+            return pixels;
+        }
+
+        // Function to save the current state of drawnShapes to history AND localStorage
+        function saveState() {
+            // History management for undo/redo
+            if (historyIndex < history.length - 1) {
+                history = history.slice(0, historyIndex + 1);
+            }
+            history.push(JSON.parse(JSON.stringify(drawnShapes))); // Deep copy
+            if (history.length > MAX_HISTORY_STATES) {
+                history.shift(); // Remove the oldest state
+            } else {
+                historyIndex++;
+            }
+            updateUndoRedoButtons();
+
+            // Save to localStorage
+            try {
+                localStorage.setItem('pixelArtState', JSON.stringify({
+                    drawnShapes: drawnShapes,
+                    colorPalette: colorPalette,
+                    zoomLevel: zoomLevel,
+                    panOffset: panOffset
+                }));
+                // console.log("Drawing state saved to localStorage.");
+            } catch (error) {
+                console.error("Error saving state to localStorage:", error);
+            }
+        }
+
+        // Function to load a state from history
+        function loadState(index) {
+            if (index >= 0 && index < history.length) {
+                drawnShapes = JSON.parse(JSON.stringify(history[index])); // Deep copy
+                historyIndex = index;
+                selectedShapes = []; // Deselect any shapes when loading state
+                redrawCanvas();
+                updateUndoRedoButtons();
+            }
+        }
+
+        // Function to handle undo action
+        function undo() {
+            if (historyIndex > 0) {
+                loadState(historyIndex - 1);
+            }
+        }
+
+        // Function to handle redo action
+        function redo() {
+            if (historyIndex < history.length - 1) {
+                loadState(historyIndex + 1);
+            }
+        }
+
+        // Function to update the disabled state of undo/redo buttons
+        function updateUndoRedoButtons() {
+            undoButton.disabled = historyIndex <= 0;
+            redoButton.disabled = historyIndex >= history.length - 1;
+        }
+
+        // Event listener for mouse down on canvas
+        canvas.addEventListener('mousedown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            // Get mouse position relative to canvas element
+            const relativeX = e.clientX - rect.left;
+            const relativeY = e.clientY - rect.top;
+
+            // Handle middle mouse button for panning
+            if (e.button === 1) { // Middle mouse button
+                isPanning = true;
+                lastPanPoint = { x: e.clientX, y: e.clientY };
+                canvas.style.cursor = 'grabbing';
+                e.preventDefault(); // Prevent default scroll behavior of middle click
+                return;
+            }
+
+            // Convert canvas coordinates to logical pixel coordinates, adjusting for pan offset
+            const mouseX = Math.floor((relativeX - panOffset.x) / (PIXEL_DRAW_SIZE * zoomLevel));
+            const mouseY = Math.floor((relativeY - panOffset.y) / (PIXEL_DRAW_SIZE * zoomLevel));
+
+            startPoint.x = mouseX;
+            startPoint.y = mouseY;
+
+            if (currentTool === 'select') {
+                const combinedBBox = getCombinedBoundingBox(selectedShapes);
+                const handle = getHandleAtPoint(mouseX, mouseY, combinedBBox);
+
+                // If clicking on a handle of the combined bounding box
+                if (handle && selectedShapes.length > 0 && selectedShapes.some(s => s.type === 'pixel' || s.type === 'rectangle')) {
+                    isResizing = true;
+                    resizeHandle = handle;
+                    initialSelectedShapesState = JSON.parse(JSON.stringify(selectedShapes)); // Save initial state of all selected shapes
+                    return;
+                }
+
+                // If clicking inside the combined bounding box (to drag the group)
+                if (selectedShapes.length > 0 && isPointInShape(mouseX, mouseY, { type: 'rectangle', x: combinedBBox.x, y: combinedBBox.y, width: combinedBBox.width, height: combinedBBox.height })) {
+                    isDragging = true;
+                    initialSelectedShapesState = JSON.parse(JSON.stringify(selectedShapes)); // Save initial state of all selected shapes
+                    return;
+                }
+
+                // If no selection, or clicking outside selected group, start drawing a new selection box
+                selectedShapes = []; // Deselect current
+                isDrawingSelectionBox = true;
+                selectionBoxStartPoint = { x: mouseX, y: mouseY };
+                redrawCanvas(); // Clear existing selection box and start drawing new one
+                return;
+            }
+
+            // For drawing tools
+            isDrawing = true;
+            // For pixel tool, draw immediately and save state
+            if (currentTool === 'pixel') {
+                if (mouseX >= 0 && mouseX < CANVAS_WIDTH && mouseY >= 0 && mouseY < CANVAS_HEIGHT) {
+                    drawnShapes.push({ type: 'pixel', x: mouseX, y: mouseY, color: currentColor });
+                    saveState(); // Save state after each pixel draw
+                    redrawCanvas();
+                }
+            }
+        });
+
+        // Event listener for mouse move on canvas (for continuous drawing and preview)
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            // Get mouse position relative to canvas element
+            const relativeX = e.clientX - rect.left;
+            const relativeY = e.clientY - rect.top;
+
+            // Update coordinate display (always show logical coordinates adjusted for pan)
+            const currentLogicalX = Math.floor((relativeX - panOffset.x) / (PIXEL_DRAW_SIZE * zoomLevel));
+            const currentLogicalY = Math.floor((relativeY - panOffset.y) / (PIXEL_DRAW_SIZE * zoomLevel));
+            coordsDisplay.textContent = `X: ${currentLogicalX}, Y: ${currentLogicalY}`;
+
+
+            if (isPanning) {
+                const dx = e.clientX - lastPanPoint.x;
+                const dy = e.clientY - lastPanPoint.y;
+                panOffset.x += dx;
+                panOffset.y += dy;
+                lastPanPoint = { x: e.clientX, y: e.clientY };
+                redrawCanvas();
+                canvas.style.cursor = 'grabbing'; // Keep cursor as grabbing while panning
+                return;
+            }
+
+            // Convert canvas coordinates to logical pixel coordinates for other tools
+            const currentX = Math.floor((relativeX - panOffset.x) / (PIXEL_DRAW_SIZE * zoomLevel));
+            const currentY = Math.floor((relativeY - panOffset.y) / (PIXEL_DRAW_SIZE * zoomLevel));
+
+            if (currentTool === 'select') {
+                const combinedBBox = getCombinedBoundingBox(selectedShapes);
+                const handle = getHandleAtPoint(currentX, currentY, combinedBBox);
+
+                if (isResizing) {
+                    // Apply scaling to all selected shapes
+                    const initialBBox = getCombinedBoundingBox(initialSelectedShapesState);
+                    const dx = currentX - startPoint.x;
+                    const dy = currentY - startPoint.y;
+
+                    let newBBox = { ...initialBBox };
+
+                    switch (resizeHandle) {
+                        case 'nw':
+                            newBBox.x = initialBBox.x + dx;
+                            newBBox.y = initialBBox.y + dy;
+                            newBBox.width = initialBBox.width - dx;
+                            newBBox.height = initialBBox.height - dy;
+                            break;
+                        case 'ne':
+                            newBBox.y = initialBBox.y + dy;
+                            newBBox.width = initialBBox.width + dx;
+                            newBBox.height = initialBBox.height - dy;
+                            break;
+                        case 'sw':
+                            newBBox.x = initialBBox.x + dx;
+                            newBBox.width = initialBBox.width - dx;
+                            newBBox.height = initialBBox.height + dy;
+                            break;
+                        case 'se':
+                            newBBox.width = initialBBox.width + dx;
+                            newBBox.height = initialBBox.height + dy;
+                            break;
+                    }
+
+                    // Ensure minimum dimensions
+                    newBBox.width = Math.max(1, newBBox.width);
+                    newBBox.height = Math.max(1, newBBox.height);
+
+                    const scaleX = newBBox.width / initialBBox.width;
+                    const scaleY = newBBox.height / initialBBox.height;
+
+                    selectedShapes.forEach((shape, index) => {
+                        const initialShape = initialSelectedShapesState[index];
+                        if (initialShape.type === 'pixel' || initialShape.type === 'rectangle') {
+                            // Calculate new position relative to the initial bounding box origin, then scale
+                            const relativeX = initialShape.x - initialBBox.x;
+                            const relativeY = initialShape.y - initialBBox.y;
+
+                            shape.x = Math.round(newBBox.x + relativeX * scaleX);
+                            shape.y = Math.round(newBBox.y + relativeY * scaleY);
+                            shape.width = Math.max(1, Math.round(initialShape.width * scaleX));
+                            shape.height = Math.max(1, Math.round(initialShape.height * scaleY));
+
+                        } else if (initialShape.type === 'circle') {
+                            // Circles are moved but not scaled in this version
+                            shape.centerX = Math.round(newBBox.x + (initialShape.centerX - initialBBox.x) * scaleX);
+                            shape.centerY = Math.round(newBBox.y + (initialShape.centerY - initialBBox.y) * scaleY);
+                        } else if (initialShape.type === 'line') {
+                            // Lines are moved but not scaled in this version
+                            shape.x1 = Math.round(newBBox.x + (initialShape.x1 - initialBBox.x) * scaleX);
+                            shape.y1 = Math.round(newBBox.y + (initialShape.y1 - initialBBox.y) * scaleY);
+                            shape.x2 = Math.round(newBBox.x + (initialShape.x2 - initialBBox.x) * scaleX);
+                            shape.y2 = Math.round(newBBox.y + (initialShape.y2 - initialBBox.y) * scaleY);
+                        }
+                    });
+                    redrawCanvas();
+                    return;
+                }
+
+                if (isDragging) {
+                    const dx = currentX - startPoint.x;
+                    const dy = currentY - startPoint.y;
+
+                    selectedShapes.forEach((shape, index) => {
+                        const initialShape = initialSelectedShapesState[index];
+                        if (shape.type === 'pixel' || shape.type === 'rectangle') {
+                            shape.x = initialShape.x + dx;
+                            shape.y = initialShape.y + dy;
+                        } else if (shape.type === 'circle') {
+                            shape.centerX = initialShape.centerX + dx;
+                            shape.centerY = initialShape.centerY + dy;
+                        } else if (shape.type === 'line') {
+                            shape.x1 = initialShape.x1 + dx;
+                            shape.y1 = initialShape.y1 + dy;
+                            shape.x2 = initialShape.x2 + dx;
+                            shape.y2 = initialShape.y2 + dy;
+                        }
+                    });
+                    redrawCanvas();
+                    return;
+                }
+
+                // Update cursor based on hover for selection tool
+                if (handle) {
+                    canvas.style.cursor = `${handle}-resize`;
+                } else if (selectedShapes.length > 0 && isPointInShape(currentX, currentY, { type: 'rectangle', x: combinedBBox.x, y: combinedBBox.y, width: combinedBBox.width, height: combinedBBox.height })) {
+                    canvas.style.cursor = 'move';
+                } else {
+                    canvas.style.cursor = 'default';
+                }
+
+                if (isDrawingSelectionBox) {
+                    redrawCanvas(); // Redraw to show the selection box preview
+                    return;
+                }
+            } else { // For drawing tools, ensure cursor is crosshair if not panning
+                canvas.style.cursor = 'crosshair';
+            }
+
+
+            if (isDrawing) {
+                // Redraw the canvas to clear the previous preview
+                redrawCanvas();
+
+                if (currentTool === 'pixel') {
+                    // For pixels, draw continuously while dragging (add to drawnShapes on mouseup)
+                    if (currentX >= 0 && currentX < CANVAS_WIDTH && currentY >= 0 && currentY < CANVAS_HEIGHT) {
+                        currentPreviewShape = { type: 'pixel', x: currentX, y: currentY, color: currentColor };
+                    }
+                } else if (currentTool === 'rectangle') {
+                    const x = Math.min(startPoint.x, currentX);
+                    const y = Math.min(startPoint.y, currentY);
+                    const width = Math.abs(currentX - startPoint.x) + 1;
+                    const height = Math.abs(currentY - startPoint.y) + 1;
+                    currentPreviewShape = { type: 'rectangle', x, y, width, height, color: currentColor };
+                } else if (currentTool === 'circle') {
+                    const radius = Math.sqrt(Math.pow(currentX - startPoint.x, 2) + Math.pow(currentY - startPoint.y, 2));
+                    currentPreviewShape = { type: 'circle', centerX: startPoint.x, centerY: startPoint.y, radius, color: currentColor };
+                } else if (currentTool === 'line') {
+                    currentPreviewShape = { type: 'line', x1: startPoint.x, y1: startPoint.y, x2: currentX, y2: currentY, color: currentColor };
+                }
+                redrawCanvas(); // Redraw with preview
+            }
+        });
+
+        // Event listener for mouse up on canvas (stop drawing and finalize shape)
+        canvas.addEventListener('mouseup', (e) => {
+            if (isPanning) {
+                isPanning = false;
+                // Restore cursor based on current tool
+                if (currentTool === 'select') {
+                    canvas.style.cursor = 'default';
+                } else {
+                    canvas.style.cursor = 'crosshair';
+                }
+                saveState(); // Save state after panning ends
+                return; // Prevent other mouse up logic from running
+            }
+
+            if (!isDrawing && !isDragging && !isResizing && !isDrawingSelectionBox) return; // Prevent finalizing if not doing anything
+
+            const rect = canvas.getBoundingClientRect();
+            // Convert canvas coordinates to logical pixel coordinates, adjusting for pan offset
+            const endX = Math.floor(((e.clientX - rect.left) - panOffset.x) / (PIXEL_DRAW_SIZE * zoomLevel));
+            const endY = Math.floor(((e.clientY - rect.top) - panOffset.y) / (PIXEL_DRAW_SIZE * zoomLevel));
+
+            if (isResizing) {
+                isResizing = false;
+                resizeHandle = '';
+                initialSelectedShapesState = [];
+                saveState(); // Save state after resizing
+                redrawCanvas();
+                return;
+            }
+
+            if (isDragging) {
+                isDragging = false;
+                initialSelectedShapesState = [];
+                saveState(); // Save state after dragging
+                redrawCanvas();
+                return;
+            }
+
+            if (isDrawingSelectionBox) {
+                isDrawingSelectionBox = false;
+                currentPreviewShape = null; // Clear selection box preview
+
+                const selectionRect = {
+                    x: Math.min(selectionBoxStartPoint.x, endX),
+                    y: Math.min(selectionBoxStartPoint.y, endY),
+                    width: Math.abs(endX - selectionBoxStartPoint.x),
+                    height: Math.abs(endY - selectionBoxStartPoint.y)
+                };
+
+                selectedShapes = []; // Clear previous selection
+                drawnShapes.forEach(shape => {
+                    const bbox = getShapeBoundingBox(shape);
+                    // Check for intersection between selectionRect and shape's bounding box
+                    if (bbox.x < selectionRect.x + selectionRect.width &&
+                        bbox.x + bbox.width > selectionRect.x &&
+                        bbox.y < selectionRect.y + selectionRect.height &&
+                        bbox.y + bbox.height > selectionRect.y) {
+                        selectedShapes.push(shape);
+                    }
+                });
+
+                // If only one shape is selected by the box, and it was a click (not a drag)
+                // This handles single-shape selection when the selection tool is active
+                if (selectedShapes.length === 0 && (selectionRect.width === 0 && selectionRect.height === 0)) {
+                    // If it was a click and no box was drawn, try to select a single shape
+                     for (let i = drawnShapes.length - 1; i >= 0; i--) {
+                        if (isPointInShape(endX, endY, drawnShapes[i])) {
+                            selectedShapes.push(drawnShapes[i]);
+                            break;
+                        }
+                    }
+                }
+
+                redrawCanvas();
+                return;
+            }
+
+            if (isDrawing) {
+                isDrawing = false;
+                if (currentTool === 'pixel') {
+                    // Pixels are added on mousedown for single clicks. For drag, add here.
+                    if (startPoint.x !== endX || startPoint.y !== endY) { // Only add if it was a drag
+                        if (endX >= 0 && endX < CANVAS_WIDTH && endY >= 0 && endY < CANVAS_HEIGHT) {
+                            drawnShapes.push({ type: 'pixel', x: endX, y: endY, color: currentColor });
+                        }
+                    }
+                } else if (currentTool === 'rectangle') {
+                    const x = Math.min(startPoint.x, endX);
+                    const y = Math.min(startPoint.y, endY);
+                    const width = Math.abs(endX - startPoint.x) + 1;
+                    const height = Math.abs(endY - startPoint.y) + 1;
+                    if (width > 0 && height > 0) { // Only add if it's a valid rectangle
+                        drawnShapes.push({ type: 'rectangle', x, y, width, height, color: currentColor });
+                    }
+                } else if (currentTool === 'circle') {
+                    const radius = Math.sqrt(Math.pow(endX - startPoint.x, 2) + Math.pow(endY - startPoint.y, 2));
+                    if (radius > 0) { // Only add if it's a valid circle
+                        drawnShapes.push({ type: 'circle', centerX: startPoint.x, centerY: startPoint.y, radius, color: currentColor });
+                    }
+                } else if (currentTool === 'line') {
+                    drawnShapes.push({ type: 'line', x1: startPoint.x, y1: startPoint.y, x2: endX, y2: endY, color: currentColor });
+                }
+
+                currentPreviewShape = null; // Clear preview
+                saveState(); // Save state after finalizing shape
+                redrawCanvas(); // Redraw the canvas with the finalized shapes
+            }
+        });
+
+        // Event listener for mouse leave on canvas (stop drawing if mouse leaves while drawing)
+        canvas.addEventListener('mouseleave', () => {
+            isDrawing = false;
+            isDragging = false;
+            isResizing = false;
+            isDrawingSelectionBox = false;
+            isPanning = false; // Stop panning if mouse leaves
+            currentPreviewShape = null; // Clear preview
+            initialSelectedShapesState = [];
+            
+            // Restore cursor based on current tool
+            if (currentTool === 'select') {
+                canvas.style.cursor = 'default';
+            } else {
+                canvas.style.cursor = 'crosshair';
+            }
+            redrawCanvas(); // Ensure preview is cleared and cursor is reset
+        });
+
+        // Event listener for color picker change
+        colorPicker.addEventListener('input', (e) => {
+            currentColor = e.target.value;
+            updateColorDisplay();
+        });
+
+        // Event listener for clear button
+        clearButton.addEventListener('click', () => {
+            // Clear the drawn shapes array
+            drawnShapes.length = 0;
+            selectedShapes = []; // Deselect any shape
+            saveState(); // Save state after clearing
+            // Redraw the canvas to show it's empty
+            redrawCanvas();
+            // Clear the assembly code output
+            assemblyCodeOutput.value = '';
+        });
+
+        // Function to convert hex color (#RRGGBB) to ARGB (0xAARRGGBB)
+        function hexToARGB(hex) {
+            // Remove '#' if present
+            const cleanHex = hex.startsWith('#') ? hex.substring(1) : hex;
+            // The example output format is 0xc22419, which implies no alpha prefix.
+            // If ARGB (0xAARRGGBB) is truly needed, prepend 'FF' for full opacity: `return `0xFF${cleanHex.toUpperCase()}`;`
+            return `0x${cleanHex.toUpperCase()}`;
+        }
+
+        // Event listener for generate code button
+        generateCodeButton.addEventListener('click', () => {
+            let code = `.global car_5\ncar_5:\n`;
+            code += `    // Generated Pixel Art Data\n`;
+            code += `    // Format: .word RECTANGLE, height, width, X, Y, ARGB_COLOR\n`;
+            code += `    // Note: Rectangles are output as single commands. Pixels, Circles and Lines are rasterized to individual 1x1 pixels.\n`;
+
+            // Collect all pixels to be output, sorting them later
+            let allOutputPixels = [];
+
+            drawnShapes.forEach(shape => {
+                if (shape.type === 'pixel') {
+                    allOutputPixels.push({ x: shape.x, y: shape.y, color: shape.color });
+                } else if (shape.type === 'rectangle') {
+                    // For rectangles, directly output the shape properties
+                    const argbColor = hexToARGB(shape.color);
+                    code += `    .word RECTANGLE, ${shape.height}, ${shape.width}, ${shape.x}, ${shape.y}, ${argbColor}\n`;
+                } else if (shape.type === 'circle') {
+                    // Rasterize circle into pixels
+                    const pixels = getPixelsForCircle(shape.centerX, shape.centerY, shape.radius, shape.color);
+                    allOutputPixels.push(...pixels);
+                } else if (shape.type === 'line') {
+                    // Rasterize line into pixels
+                    const pixels = getPixelsForLine(shape.x1, shape.y1, shape.x2, shape.y2, shape.color);
+                    allOutputPixels.push(...pixels);
+                }
+            });
+
+            // Sort and output individual pixels for non-rectangle shapes
+            // Using a Set to ensure unique pixels, then converting back to array for sorting
+            const uniquePixels = new Set();
+            allOutputPixels.forEach(p => uniquePixels.add(JSON.stringify(p)));
+            const sortedPixels = Array.from(uniquePixels)
+                                .map(p => JSON.parse(p))
+                                .sort((a, b) => {
+                                    if (a.y === b.y) {
+                                        return a.x - b.x;
+                                    }
+                                    return a.y - b.y;
+                                });
+
+            sortedPixels.forEach(pixel => {
+                const argbColor = hexToARGB(pixel.color);
+                code += `    .word RECTANGLE, 1, 1, ${pixel.x}, ${pixel.y}, ${argbColor}\n`;
+            });
+
+
+            code += `\n    .word VALOR_DE_CORTE\n\ncar_5_end:\n`;
+            assemblyCodeOutput.value = code;
+        });
+
+        // Event listeners for tool selection
+        toolRadios.forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                currentTool = e.target.value;
+                selectedShapes = []; // Deselect any shape when changing tool
+                redrawCanvas(); // Redraw to remove selection box
+
+                // Change cursor based on tool
+                if (currentTool === 'pixel') {
+                    canvas.style.cursor = 'crosshair';
+                } else if (currentTool === 'select') {
+                    canvas.style.cursor = 'default'; // Default for selection, changes on hover
+                }
+                else {
+                    canvas.style.cursor = 'crosshair'; // Default for drawing tools
+                }
+            });
+        });
+
+        // Populate color palette
+        function populateColorPalette() {
+            colorPaletteContainer.innerHTML = ''; // Clear existing swatches
+            colorPalette.forEach(color => {
+                const swatch = document.createElement('div');
+                swatch.classList.add('color-swatch');
+                swatch.style.backgroundColor = color;
+                swatch.dataset.color = color.toUpperCase(); // Store color in dataset
+                swatch.addEventListener('click', () => {
+                    currentColor = color;
+                    updateColorDisplay();
+                    // No need to redraw canvas here, as updateColorDisplay will handle highlight
+                });
+                colorPaletteContainer.appendChild(swatch);
+            });
+            updateColorDisplay(); // Ensure selection highlight is updated after repopulating
+        }
+
+        // Add color to palette
+        addPaletteColorButton.addEventListener('click', () => {
+            const colorToAdd = currentColor.toUpperCase();
+            if (!colorPalette.includes(colorToAdd)) {
+                colorPalette.push(colorToAdd);
+                populateColorPalette();
+                saveState(); // Save state when palette changes
+            }
+        });
+
+        // Remove selected color from palette
+        removePaletteColorButton.addEventListener('click', () => {
+            const colorToRemove = currentColor.toUpperCase();
+            const index = colorPalette.indexOf(colorToRemove);
+            if (index > -1) {
+                colorPalette.splice(index, 1);
+                populateColorPalette();
+                // If the removed color was the current one, reset current color
+                if (currentColor.toUpperCase() === colorToRemove) {
+                    currentColor = colorPalette.length > 0 ? colorPalette[0] : '#000000'; // Default to first or black
+                    updateColorDisplay();
+                }
+                saveState(); // Save state when palette changes
+            }
+        });
+
+        // Zoom functionality
+        zoomInButton.addEventListener('click', () => {
+            if (zoomLevel < MAX_ZOOM) {
+                zoomLevel *= 2;
+                zoomLevelDisplay.textContent = `${zoomLevel}x`;
+                redrawCanvas();
+                saveState(); // Save state after zoom changes
+            }
+        });
+
+        zoomOutButton.addEventListener('click', () => {
+            if (zoomLevel > MIN_ZOOM) {
+                zoomLevel /= 2;
+                zoomLevelDisplay.textContent = `${zoomLevel}x`;
+                redrawCanvas();
+                saveState(); // Save state after zoom changes
+            }
+        });
+
+        // Undo/Redo button event listeners
+        undoButton.addEventListener('click', undo);
+        redoButton.addEventListener('click', redo);
+
+        // Keyboard shortcuts for Undo/Redo and Delete
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey) { // Ctrl for Windows/Linux, Cmd for Mac
+                if (e.key === 'z' || e.key === 'Z') {
+                    e.preventDefault(); // Prevent browser's default undo
+                    undo();
+                } else if (e.key === 'y' || e.key === 'Y') {
+                    e.preventDefault(); // Prevent browser's default redo
+                    redo();
+                }
+            } else if (e.key === 'Delete' || e.key === 'Backspace') {
+                if (selectedShapes.length > 0) {
+                    // Filter out selected shapes from drawnShapes
+                    drawnShapes = drawnShapes.filter(shape => !selectedShapes.includes(shape));
+                    selectedShapes = []; // Clear selection
+                    saveState(); // Save state after deletion
+                    redrawCanvas();
+                    e.preventDefault(); // Prevent browser's default back/forward if Backspace
+                }
+            }
+        });
+
+        // Function to parse the assembly-like code and load shapes
+        function loadShapesFromAssembly(assemblyCode) {
+            const lines = assemblyCode.split('\n');
+            const newShapes = [];
+            const RECTANGLE_REGEX = /\.word RECTANGLE, (\d+), (\d+), (\d+), (\d+), (0x[0-9a-fA-F]+)/;
+
+            lines.forEach(line => {
+                const match = line.match(RECTANGLE_REGEX);
+                if (match) {
+                    const height = parseInt(match[1]);
+                    const width = parseInt(match[2]);
+                    const x = parseInt(match[3]);
+                    const y = parseInt(match[4]);
+                    const colorHex = `#${match[5].substring(2)}`; // Convert 0xRRGGBB to #RRGGBB
+
+                    if (width === 1 && height === 1) {
+                        newShapes.push({ type: 'pixel', x, y, color: colorHex });
+                    } else {
+                        newShapes.push({ type: 'rectangle', x, y, width, height, color: colorHex });
+                    }
+                }
+            });
+            return newShapes;
+        }
+
+        // Preload pixel data for initial state if no saved state
+        const preloadData = `.global car_5
+car_5:
+    // Generated Pixel Art Data
+    // Format: .word RECTANGLE, height, width, X, Y, ARGB_COLOR
+    // Note: Rectangles are output as single commands. Pixels, Circles and Lines are rasterized to individual 1x1 pixels.
+    .word RECTANGLE, 1, 42, 124, 282, 0x121212
+    .word RECTANGLE, 2, 2, 144, 280, 0x121212
+    .word RECTANGLE, 1, 16, 146, 281, 0x121212
+    .word RECTANGLE, 3, 2, 142, 279, 0x0D2231
+    .word RECTANGLE, 1, 3, 144, 279, 0x0D2231
+    .word RECTANGLE, 2, 2, 146, 279, 0x0D2231
+    .word RECTANGLE, 1, 8, 148, 280, 0x0D2231
+    .word RECTANGLE, 4, 9, 156, 277, 0x0D2231
+    .word RECTANGLE, 1, 1, 163, 281, 0x0D2231
+    .word RECTANGLE, 1, 1, 162, 281, 0x0D2231
+    .word RECTANGLE, 1, 1, 164, 281, 0x0D2231
+    .word RECTANGLE, 4, 5, 158, 273, 0x0D2231
+    .word RECTANGLE, 3, 2, 164, 279, 0x0D2231
+    .word RECTANGLE, 2, 6, 136, 280, 0x0D2231
+    .word RECTANGLE, 3, 2, 134, 279, 0x0D2231
+    .word RECTANGLE, 6, 3, 131, 276, 0x0D2231
+    .word RECTANGLE, 9, 5, 127, 273, 0x0D2231
+    .word RECTANGLE, 6, 2, 125, 276, 0x0D2231
+    .word RECTANGLE, 3, 2, 124, 279, 0x0D2231
+    .word RECTANGLE, 4, 6, 142, 275, 0x153B51
+    .word RECTANGLE, 3, 6, 142, 271, 0x0D2231
+    .word RECTANGLE, 2, 46, 122, 269, 0x272626
+    .word RECTANGLE, 9, 6, 136, 271, 0x153B51
+    .word RECTANGLE, 5, 3, 133, 271, 0x153B51
+    .word RECTANGLE, 3, 2, 134, 276, 0x153B51
+    .word RECTANGLE, 2, 6, 127, 271, 0x153B51
+    .word RECTANGLE, 4, 1, 132, 272, 0x153B51
+    .word RECTANGLE, 9, 8, 148, 271, 0x153B51
+    .word RECTANGLE, 6, 2, 156, 271, 0x153B51
+    .word RECTANGLE, 2, 5, 158, 271, 0x153B51
+    .word RECTANGLE, 2, 7, 163, 271, 0x272626
+    .word RECTANGLE, 1, 1, 163, 272, 0x153B51
+    .word RECTANGLE, 1, 1, 163, 271, 0x153B51
+    .word RECTANGLE, 1, 1, 164, 272, 0x153B51
+    .word RECTANGLE, 1, 1, 163, 273, 0x153B51
+    .word RECTANGLE, 1, 1, 164, 273, 0x153B51
+    .word RECTANGLE, 2, 1, 164, 273, 0x153B51
+    .word RECTANGLE, 1, 1, 163, 274, 0x153B51
+    .word RECTANGLE, 4, 2, 164, 273, 0x153B51
+    .word RECTANGLE, 1, 1, 164, 275, 0x153B51
+    .word RECTANGLE, 1, 1, 163, 275, 0x153B51
+    .word RECTANGLE, 1, 1, 163, 276, 0x153B51
+    .word RECTANGLE, 10, 5, 165, 273, 0x153B51
+    .word RECTANGLE, 12, 3, 121, 271, 0x153B51
+    .word RECTANGLE, 5, 3, 123, 271, 0x153B51
+    .word RECTANGLE, 5, 1, 126, 271, 0x153B51
+    .word RECTANGLE, 4, 1, 124, 275, 0x153B51
+    .word RECTANGLE, 3, 5, 166, 273, 0x272626
+    .word RECTANGLE, 4, 6, 167, 276, 0x272626
+    .word RECTANGLE, 1, 8, 167, 281, 0x272626
+    .word RECTANGLE, 4, 9, 166, 279, 0x272626
+    .word RECTANGLE, 2, 1, 165, 280, 0x272626
+    .word RECTANGLE, 3, 5, 165, 279, 0x0D2231
+    .word RECTANGLE, 1, 16, 156, 282, 0x272626
+    .word RECTANGLE, 2, 5, 120, 271, 0x272626
+    .word RECTANGLE, 3, 6, 118, 273, 0x272626
+    .word RECTANGLE, 3, 6, 117, 276, 0x272626
+    .word RECTANGLE, 4, 8, 115, 279, 0x272626
+    .word RECTANGLE, 8, 3, 120, 275, 0x153B51
+    .word RECTANGLE, 4, 4, 122, 273, 0x153B51
+    .word RECTANGLE, 3, 4, 120, 280, 0x0D2231
+    .word RECTANGLE, 1, 6, 142, 274, 0x153B51
+    .word RECTANGLE, 1, 4, 166, 279, 0x153B51
+    .word RECTANGLE, 1, 2, 167, 278, 0x153B51
+    .word RECTANGLE, 3, 1, 166, 274, 0x153B51
+    .word RECTANGLE, 3, 1, 167, 276, 0x153B51
+    .word RECTANGLE, 2, 1, 120, 275, 0x272626
+    .word RECTANGLE, 2, 1, 120, 277, 0x272626
+    .word RECTANGLE, 1, 1, 120, 278, 0x153B51
+    .word RECTANGLE, 1, 1, 120, 277, 0x153B51
+    .word RECTANGLE, 1, 1, 124, 272, 0x153B51
+    .word RECTANGLE, 1, 1, 123, 272, 0x153B51
+    .word RECTANGLE, 1, 1, 124, 271, 0x153B51
+    .word RECTANGLE, 4, 1, 114, 279, 0x670D04
+    .word RECTANGLE, 1, 3, 114, 278, 0x670D04
+    .word RECTANGLE, 4, 1, 116, 275, 0x670D04
+    .word RECTANGLE, 4, 1, 118, 272, 0x670D04
+    .word RECTANGLE, 1, 2, 118, 272, 0x670D04
+    .word RECTANGLE, 3, 1, 119, 270, 0x670D04
+    .word RECTANGLE, 1, 2, 120, 270, 0x670D04
+    .word RECTANGLE, 3, 1, 121, 268, 0x670D04
+    .word RECTANGLE, 1, 47, 122, 268, 0x670D04
+    .word RECTANGLE, 3, 1, 168, 268, 0x670D04
+    .word RECTANGLE, 1, 3, 168, 270, 0x670D04
+    .word RECTANGLE, 2, 1, 170, 271, 0x670D04
+    .word RECTANGLE, 1, 2, 170, 272, 0x670D04
+    .word RECTANGLE, 4, 1, 171, 272, 0x670D04
+    .word RECTANGLE, 1, 3, 171, 275, 0x670D04
+    .word RECTANGLE, 4, 1, 173, 275, 0x670D04
+    .word RECTANGLE, 1, 2, 173, 278, 0x670D04
+    .word RECTANGLE, 5, 1, 175, 278, 0x670D04
+    .word RECTANGLE, 3, 42, 124, 266, 0x670D04
+    .word RECTANGLE, 1, 1, 167, 268, 0x670D04
+    .word RECTANGLE, 1, 2, 166, 267, 0x670D04
+    .word RECTANGLE, 1, 41, 124, 266, 0xB52510
+    .word RECTANGLE, 2, 16, 124, 267, 0xB52510
+    .word RECTANGLE, 2, 15, 151, 267, 0xB52510
+    .word RECTANGLE, 2, 1, 139, 267, 0x670D04
+    .word RECTANGLE, 2, 62, 114, 283, 0xB52510
+    .word RECTANGLE, 1, 1, 176, 279, 0x121212
+    .word RECTANGLE, 1, 1, 176, 280, 0x121212
+    .word RECTANGLE, 1, 4, 177, 278, 0x121212
+    .word RECTANGLE, 1, 1, 181, 279, 0x121212
+    .word RECTANGLE, 1, 1, 182, 280, 0x121212
+    .word RECTANGLE, 1, 1, 181, 281, 0x121212
+    .word RECTANGLE, 1, 3, 178, 282, 0x121212
+    .word RECTANGLE, 1, 1, 177, 281, 0x121212
+    .word RECTANGLE, 4, 1, 176, 280, 0xB52510
+    .word RECTANGLE, 3, 1, 177, 282, 0xB52510
+    .word RECTANGLE, 1, 1, 176, 284, 0xB52510
+    .word RECTANGLE, 4, 1, 178, 284, 0xB52510
+    .word RECTANGLE, 4, 1, 179, 287, 0xB52510
+    .word RECTANGLE, 1, 3, 177, 279, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 179, 279, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 179, 280, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 180, 279, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 180, 279, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 181, 280, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 180, 280, 0xBEC5C5
+    .word RECTANGLE, 1, 2, 178, 281, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 178, 280, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 177, 280, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 180, 281, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 112, 279, 0x121212
+    .word RECTANGLE, 1, 1, 113, 279, 0x121212
+    .word RECTANGLE, 1, 1, 113, 280, 0x121212
+    .word RECTANGLE, 1, 1, 176, 280, 0x121212
+    .word RECTANGLE, 1, 3, 109, 278, 0x121212
+    .word RECTANGLE, 1, 1, 108, 279, 0x121212
+    .word RECTANGLE, 1, 1, 107, 280, 0x121212
+    .word RECTANGLE, 1, 1, 108, 281, 0x121212
+    .word RECTANGLE, 1, 1, 112, 281, 0x121212
+    .word RECTANGLE, 1, 3, 109, 282, 0x121212
+    .word RECTANGLE, 6, 1, 113, 281, 0xB72513
+    .word RECTANGLE, 5, 1, 112, 284, 0xB72513
+    .word RECTANGLE, 1, 1, 112, 282, 0xB72513
+    .word RECTANGLE, 1, 1, 112, 283, 0xB72513
+    .word RECTANGLE, 6, 1, 111, 284, 0xB72513
+    .word RECTANGLE, 3, 1, 177, 285, 0xB72513
+    .word RECTANGLE, 2, 1, 178, 287, 0xB72513
+    .word RECTANGLE, 3, 3, 109, 279, 0xBEC5C5
+    .word RECTANGLE, 2, 1, 112, 279, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 108, 280, 0xBEC5C5
+    .word RECTANGLE, 2, 63, 114, 284, 0xB72513
+    .word RECTANGLE, 2, 45, 123, 286, 0xF54429
+    .word RECTANGLE, 1, 1, 112, 284, 0x670D04
+    .word RECTANGLE, 1, 1, 113, 282, 0x670D04
+    .word RECTANGLE, 4, 1, 112, 285, 0x670D04
+    .word RECTANGLE, 1, 5, 112, 289, 0x670D04
+    .word RECTANGLE, 1, 2, 117, 289, 0x670D04
+    .word RECTANGLE, 4, 1, 118, 285, 0x670D04
+    .word RECTANGLE, 1, 5, 114, 284, 0x670D04
+    .word RECTANGLE, 2, 2, 111, 284, 0xB72513
+    .word RECTANGLE, 1, 3, 119, 284, 0x670D04
+    .word RECTANGLE, 1, 3, 122, 285, 0x670D04
+    .word RECTANGLE, 3, 1, 125, 286, 0x670D04
+    .word RECTANGLE, 1, 6, 119, 289, 0x670D04
+    .word RECTANGLE, 1, 1, 124, 288, 0x670D04
+    .word RECTANGLE, 1, 11, 113, 288, 0xFF751A
+    .word RECTANGLE, 2, 2, 115, 286, 0xF54429
+    .word RECTANGLE, 2, 3, 119, 286, 0xF54429
+    .word RECTANGLE, 3, 2, 113, 285, 0xB72513
+    .word RECTANGLE, 2, 1, 117, 286, 0xB72513
+    .word RECTANGLE, 3, 1, 122, 285, 0xB72513
+    .word RECTANGLE, 1, 1, 113, 284, 0x670D04
+    .word RECTANGLE, 1, 1, 122, 284, 0x670D04
+    .word RECTANGLE, 2, 1, 164, 286, 0x670D04
+    .word RECTANGLE, 1, 1, 164, 288, 0x670D04
+    .word RECTANGLE, 1, 1, 165, 288, 0x670D04
+    .word RECTANGLE, 1, 12, 166, 289, 0x670D04
+    .word RECTANGLE, 5, 1, 177, 285, 0x670D04
+    .word RECTANGLE, 1, 2, 165, 285, 0x670D04
+    .word RECTANGLE, 1, 9, 167, 284, 0x670D04
+    .word RECTANGLE, 1, 1, 177, 285, 0xB72513
+    .word RECTANGLE, 1, 1, 176, 284, 0x670D04
+    .word RECTANGLE, 1, 11, 166, 288, 0xFF751A
+    .word RECTANGLE, 5, 1, 172, 284, 0x670D04
+    .word RECTANGLE, 1, 1, 118, 288, 0x670D04
+    .word RECTANGLE, 1, 1, 119, 286, 0xB72513
+    .word RECTANGLE, 1, 1, 119, 287, 0xB72513
+    .word RECTANGLE, 2, 3, 169, 286, 0xF54429
+    .word RECTANGLE, 3, 3, 174, 285, 0xF54429
+    .word RECTANGLE, 1, 1, 173, 287, 0xF54429
+    .word RECTANGLE, 1, 1, 173, 285, 0xF54429
+    .word RECTANGLE, 1, 1, 173, 286, 0xF54429
+    .word RECTANGLE, 1, 1, 168, 286, 0xF54429
+    .word RECTANGLE, 1, 1, 168, 287, 0xF54429
+    .word RECTANGLE, 1, 1, 166, 288, 0x670D04
+    .word RECTANGLE, 1, 1, 123, 288, 0x670D04
+    .word RECTANGLE, 1, 1, 165, 286, 0x670D04
+    .word RECTANGLE, 1, 1, 165, 286, 0x670D04
+    .word RECTANGLE, 1, 1, 124, 286, 0x670D04
+    .word RECTANGLE, 8, 1, 111, 287, 0xB72513
+    .word RECTANGLE, 8, 2, 178, 289, 0xB72513
+    .word RECTANGLE, 9, 1, 179, 287, 0xB72513
+    .word RECTANGLE, 7, 3, 110, 290, 0xB72513
+    .word RECTANGLE, 1, 1, 180, 296, 0xB72513
+    .word RECTANGLE, 8, 1, 110, 292, 0xB72513
+    .word RECTANGLE, 8, 2, 179, 292, 0xB72513
+    .word RECTANGLE, 2, 41, 124, 283, 0xF54429
+    .word RECTANGLE, 1, 11, 164, 283, 0xF54429
+    .word RECTANGLE, 1, 2, 165, 284, 0xF54429
+    .word RECTANGLE, 2, 1, 123, 283, 0xF54429
+    .word RECTANGLE, 1, 8, 116, 283, 0xF54429
+    .word RECTANGLE, 1, 39, 125, 285, 0xF54429
+    .word RECTANGLE, 4, 38, 126, 286, 0xB72513
+    .word RECTANGLE, 4, 1, 120, 290, 0x670D04
+    .word RECTANGLE, 4, 1, 171, 290, 0x670D04
+    .word RECTANGLE, 2, 1, 120, 294, 0x670D04
+    .word RECTANGLE, 1, 1, 121, 295, 0x670D04
+    .word RECTANGLE, 1, 1, 171, 294, 0x670D04
+    .word RECTANGLE, 1, 1, 170, 295, 0x670D04
+    .word RECTANGLE, 1, 1, 169, 296, 0x670D04
+    .word RECTANGLE, 1, 1, 122, 296, 0x670D04
+    .word RECTANGLE, 1, 47, 122, 298, 0x670D04
+    .word RECTANGLE, 1, 43, 123, 296, 0xF54429
+    .word RECTANGLE, 4, 47, 121, 290, 0xB72513
+    .word RECTANGLE, 1, 1, 164, 289, 0xB72513
+    .word RECTANGLE, 1, 1, 165, 289, 0xB72513
+    .word RECTANGLE, 1, 1, 125, 289, 0xB72513
+    .word RECTANGLE, 1, 1, 121, 294, 0xB72513
+    .word RECTANGLE, 1, 1, 122, 294, 0xB72513
+    .word RECTANGLE, 1, 2, 121, 294, 0xB72513
+    .word RECTANGLE, 3, 48, 122, 292, 0xB72513
+    .word RECTANGLE, 5, 4, 167, 290, 0xB72513
+    .word RECTANGLE, 1, 4, 166, 295, 0xB72513
+    .word RECTANGLE, 1, 1, 122, 295, 0xB72513
+    .word RECTANGLE, 1, 1, 122, 295, 0xB72513
+    .word RECTANGLE, 1, 46, 122, 296, 0xB72513
+    .word RECTANGLE, 1, 1, 122, 296, 0xB72513
+    .word RECTANGLE, 4, 6, 172, 290, 0xB72513
+    .word RECTANGLE, 4, 7, 113, 290, 0xB72513
+    .word RECTANGLE, 3, 6, 172, 296, 0xF54429
+    .word RECTANGLE, 1, 1, 171, 295, 0xF54429
+    .word RECTANGLE, 1, 1, 171, 295, 0xF54429
+    .word RECTANGLE, 1, 1, 171, 296, 0xF54429
+    .word RECTANGLE, 1, 1, 171, 296, 0xF54429
+    .word RECTANGLE, 1, 1, 170, 296, 0xF54429
+    .word RECTANGLE, 1, 1, 170, 297, 0xF54429
+    .word RECTANGLE, 1, 1, 169, 297, 0xF54429
+    .word RECTANGLE, 1, 7, 171, 297, 0xF54429
+    .word RECTANGLE, 3, 7, 113, 296, 0xF54429
+    .word RECTANGLE, 1, 1, 120, 295, 0xF54429
+    .word RECTANGLE, 1, 1, 120, 296, 0xF54429
+    .word RECTANGLE, 1, 1, 121, 296, 0xF54429
+    .word RECTANGLE, 1, 1, 122, 297, 0xF54429
+    .word RECTANGLE, 1, 10, 113, 297, 0xF54429
+    .word RECTANGLE, 1, 42, 123, 294, 0xF54429
+    .word RECTANGLE, 1, 1, 165, 294, 0xF54429
+    .word RECTANGLE, 1, 1, 144, 284, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 145, 284, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 146, 284, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 147, 285, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 147, 286, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 147, 287, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 146, 288, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 145, 288, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 144, 288, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 143, 286, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 143, 287, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 143, 285, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 144, 285, 0x121212
+    .word RECTANGLE, 1, 1, 144, 286, 0x121212
+    .word RECTANGLE, 1, 1, 145, 287, 0x121212
+    .word RECTANGLE, 1, 1, 146, 286, 0x121212
+    .word RECTANGLE, 1, 1, 146, 285, 0x121212
+    .word RECTANGLE, 1, 1, 146, 287, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 145, 285, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 146, 286, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 144, 287, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 145, 286, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 146, 286, 0x121212
+    .word RECTANGLE, 1, 1, 120, 295, 0x670D04
+    .word RECTANGLE, 1, 1, 121, 296, 0x670D04
+    .word RECTANGLE, 1, 1, 122, 297, 0x670D04
+    .word RECTANGLE, 1, 1, 122, 297, 0x670D04
+    .word RECTANGLE, 1, 1, 171, 295, 0x670D04
+    .word RECTANGLE, 1, 1, 170, 296, 0x670D04
+    .word RECTANGLE, 1, 1, 168, 297, 0x670D04
+    .word RECTANGLE, 1, 1, 169, 297, 0x670D04
+    .word RECTANGLE, 2, 45, 123, 296, 0xB72513
+    .word RECTANGLE, 1, 1, 168, 296, 0xB72513
+    .word RECTANGLE, 1, 1, 122, 294, 0xF54429
+    .word RECTANGLE, 1, 1, 122, 294, 0xF54429
+    .word RECTANGLE, 1, 1, 122, 295, 0xF54429
+    .word RECTANGLE, 1, 1, 166, 294, 0xF54429
+    .word RECTANGLE, 1, 1, 167, 294, 0xF54429
+    .word RECTANGLE, 1, 1, 169, 294, 0xF54429
+    .word RECTANGLE, 1, 1, 168, 294, 0xF54429
+    .word RECTANGLE, 2, 1, 166, 294, 0xF54429
+    .word RECTANGLE, 1, 1, 167, 295, 0xF54429
+    .word RECTANGLE, 1, 1, 123, 288, 0xF54429
+    .word RECTANGLE, 1, 1, 123, 285, 0xF54429
+    .word RECTANGLE, 1, 1, 123, 285, 0xF54429
+    .word RECTANGLE, 1, 1, 124, 285, 0xF54429
+    .word RECTANGLE, 1, 1, 124, 286, 0xF54429
+    .word RECTANGLE, 1, 1, 123, 284, 0x670D04
+    .word RECTANGLE, 1, 1, 125, 285, 0x670D04
+    .word RECTANGLE, 1, 1, 124, 285, 0x670D04
+    .word RECTANGLE, 1, 1, 166, 284, 0x670D04
+    .word RECTANGLE, 1, 1, 124, 284, 0x670D04
+    .word RECTANGLE, 1, 1, 125, 287, 0x670D04
+    .word RECTANGLE, 1, 1, 125, 287, 0x670D04
+    .word RECTANGLE, 1, 1, 126, 286, 0x670D04
+    .word RECTANGLE, 1, 1, 126, 287, 0x670D04
+    .word RECTANGLE, 1, 1, 126, 285, 0xF54429
+    .word RECTANGLE, 1, 1, 126, 286, 0xB72513
+    .word RECTANGLE, 1, 1, 126, 287, 0xB72513
+    .word RECTANGLE, 1, 1, 125, 286, 0xB72513
+    .word RECTANGLE, 1, 1, 126, 286, 0x670D04
+    .word RECTANGLE, 1, 1, 126, 287, 0x670D04
+    .word RECTANGLE, 1, 1, 125, 286, 0xF54429
+    .word RECTANGLE, 1, 1, 125, 287, 0xF54429
+    .word RECTANGLE, 1, 1, 126, 288, 0x670D04
+    .word RECTANGLE, 1, 1, 125, 286, 0x670D04
+    .word RECTANGLE, 1, 43, 124, 299, 0xF54429
+    .word RECTANGLE, 1, 43, 124, 300, 0xF54429
+    .word RECTANGLE, 4, 20, 135, 301, 0x121212
+    .word RECTANGLE, 2, 1, 155, 301, 0x670D04
+    .word RECTANGLE, 1, 1, 156, 302, 0x670D04
+    .word RECTANGLE, 1, 1, 156, 303, 0x670D04
+    .word RECTANGLE, 2, 1, 134, 301, 0x670D04
+    .word RECTANGLE, 1, 1, 133, 302, 0x670D04
+    .word RECTANGLE, 1, 1, 133, 303, 0x670D04
+    .word RECTANGLE, 3, 1, 155, 303, 0xF54429
+    .word RECTANGLE, 2, 1, 134, 303, 0xF54429
+    .word RECTANGLE, 1, 22, 134, 305, 0xF54429
+    .word RECTANGLE, 1, 43, 124, 299, 0x670D04
+    .word RECTANGLE, 2, 42, 124, 297, 0xB72513
+    .word RECTANGLE, 1, 1, 166, 298, 0xB72513
+    .word RECTANGLE, 3, 47, 122, 293, 0xB72513
+    .word RECTANGLE, 1, 1, 169, 294, 0xB72513
+    .word RECTANGLE, 1, 1, 122, 294, 0xB72513
+    .word RECTANGLE, 1, 47, 122, 296, 0xF54429
+    .word RECTANGLE, 1, 45, 123, 297, 0xF54429
+    .word RECTANGLE, 3, 7, 113, 294, 0xB72513
+    .word RECTANGLE, 2, 6, 172, 294, 0xB72513
+    .word RECTANGLE, 1, 1, 171, 298, 0xF54429
+    .word RECTANGLE, 1, 1, 171, 298, 0xF54429
+    .word RECTANGLE, 1, 1, 170, 298, 0xF54429
+    .word RECTANGLE, 1, 1, 169, 299, 0xF54429
+    .word RECTANGLE, 1, 1, 169, 298, 0xF54429
+    .word RECTANGLE, 1, 1, 168, 299, 0xF54429
+    .word RECTANGLE, 1, 1, 167, 300, 0xF54429
+    .word RECTANGLE, 1, 2, 167, 301, 0xF54429
+    .word RECTANGLE, 1, 1, 167, 299, 0xF54429
+    .word RECTANGLE, 1, 1, 168, 300, 0xF54429
+    .word RECTANGLE, 1, 1, 169, 299, 0xF54429
+    .word RECTANGLE, 1, 1, 170, 298, 0xF54429
+    .word RECTANGLE, 1, 3, 120, 298, 0xF54429
+    .word RECTANGLE, 1, 2, 122, 299, 0xF54429
+    .word RECTANGLE, 1, 3, 122, 300, 0xF54429
+    .word RECTANGLE, 1, 1, 123, 301, 0xF54429
+    .word RECTANGLE, 1, 1, 122, 301, 0xF54429
+    .word RECTANGLE, 9, 7, 114, 297, 0xB72513
+    .word RECTANGLE, 7, 13, 121, 300, 0xB72513
+    .word RECTANGLE, 1, 1, 122, 299, 0xB72513
+    .word RECTANGLE, 1, 1, 121, 299, 0xB72513
+    .word RECTANGLE, 3, 1, 132, 304, 0xB72513
+    .word RECTANGLE, 19, 8, 108, 297, 0x121212
+    .word RECTANGLE, 19, 7, 175, 297, 0x121212
+    .word RECTANGLE, 12, 8, 111, 297, 0xB72513
+    .word RECTANGLE, 12, 8, 172, 295, 0xB72513
+    .word RECTANGLE, 6, 10, 118, 305, 0xB72513
+    .word RECTANGLE, 4, 4, 116, 308, 0xB72513
+    .word RECTANGLE, 3, 2, 115, 308, 0xB72513
+    .word RECTANGLE, 5, 2, 119, 310, 0xB72513
+    .word RECTANGLE, 4, 4, 116, 310, 0xB72513
+    .word RECTANGLE, 5, 7, 113, 308, 0xB72513
+    .word RECTANGLE, 5, 3, 112, 308, 0xB72513
+    .word RECTANGLE, 10, 6, 167, 301, 0xB72513
+    .word RECTANGLE, 7, 2, 173, 305, 0xB72513
+    .word RECTANGLE, 8, 4, 174, 304, 0xB72513
+    .word RECTANGLE, 6, 2, 177, 305, 0xB72513
+    .word RECTANGLE, 2, 1, 178, 307, 0xB72513
+    .word RECTANGLE, 1, 1, 179, 307, 0xB72513
+    .word RECTANGLE, 3, 1, 173, 311, 0xB72513
+    .word RECTANGLE, 1, 1, 174, 312, 0xB72513
+    .word RECTANGLE, 3, 3, 169, 310, 0xB72513
+    .word RECTANGLE, 4, 2, 171, 311, 0xB72513
+    .word RECTANGLE, 3, 3, 173, 312, 0xB72513
+    .word RECTANGLE, 1, 1, 172, 314, 0xB72513
+    .word RECTANGLE, 8, 2, 109, 289, 0xB72513
+    .word RECTANGLE, 2, 1, 110, 287, 0xB72513
+    .word RECTANGLE, 3, 1, 180, 289, 0xB72513
+    .word RECTANGLE, 7, 2, 180, 294, 0xB72513
+    .word RECTANGLE, 6, 3, 109, 297, 0xB72513
+    .word RECTANGLE, 7, 3, 108, 293, 0xB72513
+    .word RECTANGLE, 2, 1, 108, 300, 0xB72513
+    .word RECTANGLE, 3, 2, 110, 303, 0xB72513
+    .word RECTANGLE, 3, 1, 109, 302, 0xB72513
+    .word RECTANGLE, 2, 59, 117, 312, 0xB72513
+    .word RECTANGLE, 5, 49, 121, 307, 0xB72513
+    .word RECTANGLE, 4, 4, 169, 298, 0xB72513
+    .word RECTANGLE, 7, 14, 156, 303, 0xB72513
+    .word RECTANGLE, 5, 12, 157, 300, 0xB72513
+    .word RECTANGLE, 5, 26, 132, 305, 0xB72513
+    .word RECTANGLE, 4, 55, 119, 311, 0xB72513
+    .word RECTANGLE, 7, 5, 110, 305, 0xB72513
+    .word RECTANGLE, 6, 1, 110, 305, 0xB72513
+    .word RECTANGLE, 10, 6, 109, 304, 0xB72513
+    .word RECTANGLE, 14, 5, 176, 301, 0xB72513
+    .word RECTANGLE, 1, 6, 175, 314, 0x121212
+    .word RECTANGLE, 1, 1, 179, 313, 0x121212
+    .word RECTANGLE, 1, 1, 180, 313, 0x121212
+    .word RECTANGLE, 1, 1, 180, 312, 0x121212
+    .word RECTANGLE, 1, 1, 180, 310, 0x121212
+    .word RECTANGLE, 1, 1, 180, 312, 0x121212
+    .word RECTANGLE, 1, 1, 180, 311, 0x121212
+    .word RECTANGLE, 1, 1, 174, 314, 0x121212
+    .word RECTANGLE, 1, 1, 109, 310, 0x121212
+    .word RECTANGLE, 1, 1, 109, 311, 0x121212
+    .word RECTANGLE, 1, 1, 109, 312, 0x121212
+    .word RECTANGLE, 1, 1, 109, 313, 0x121212
+    .word RECTANGLE, 1, 1, 110, 313, 0x121212
+    .word RECTANGLE, 1, 1, 111, 313, 0x121212
+    .word RECTANGLE, 1, 1, 110, 312, 0x121212
+    .word RECTANGLE, 1, 1, 111, 313, 0x121212
+    .word RECTANGLE, 1, 1, 116, 313, 0x121212
+    .word RECTANGLE, 1, 1, 117, 313, 0x121212
+    .word RECTANGLE, 1, 1, 117, 313, 0x121212
+    .word RECTANGLE, 1, 1, 117, 312, 0x121212
+    .word RECTANGLE, 1, 1, 118, 311, 0x121212
+    .word RECTANGLE, 1, 1, 117, 311, 0x121212
+    .word RECTANGLE, 1, 1, 118, 310, 0x121212
+    .word RECTANGLE, 1, 1, 119, 310, 0x121212
+    .word RECTANGLE, 1, 1, 173, 313, 0x121212
+    .word RECTANGLE, 1, 1, 173, 312, 0x121212
+    .word RECTANGLE, 1, 1, 172, 311, 0x121212
+    .word RECTANGLE, 1, 1, 171, 311, 0x121212
+    .word RECTANGLE, 1, 1, 170, 309, 0x121212
+    .word RECTANGLE, 1, 1, 171, 310, 0x121212
+    .word RECTANGLE, 5, 50, 124, 310, 0x121212
+    .word RECTANGLE, 2, 3, 170, 312, 0x121212
+    .word RECTANGLE, 1, 3, 171, 314, 0x121212
+    .word RECTANGLE, 4, 4, 119, 311, 0x121212
+    .word RECTANGLE, 3, 2, 118, 311, 0x121212
+    .word RECTANGLE, 6, 51, 123, 308, 0x121212
+    .word RECTANGLE, 5, 31, 132, 307, 0x121212
+    .word RECTANGLE, 6, 46, 126, 307, 0x121212
+    .word RECTANGLE, 1, 1, 181, 301, 0xB72513
+    .word RECTANGLE, 1, 1, 171, 308, 0xB72513
+    .word RECTANGLE, 1, 1, 169, 307, 0xB72513
+    .word RECTANGLE, 1, 1, 171, 309, 0x121212
+    .word RECTANGLE, 1, 1, 169, 307, 0x121212
+    .word RECTANGLE, 1, 1, 119, 309, 0x121212
+    .word RECTANGLE, 1, 1, 118, 310, 0x121212
+    .word RECTANGLE, 1, 1, 120, 308, 0x121212
+    .word RECTANGLE, 1, 1, 122, 307, 0x121212
+    .word RECTANGLE, 2, 1, 121, 307, 0x121212
+    .word RECTANGLE, 1, 1, 116, 314, 0x121212
+    .word RECTANGLE, 1, 1, 169, 307, 0xB72513
+    .word RECTANGLE, 1, 1, 170, 309, 0xB72513
+    .word RECTANGLE, 1, 1, 170, 307, 0xB72513
+    .word RECTANGLE, 1, 1, 170, 308, 0xB72513
+    .word RECTANGLE, 1, 1, 171, 309, 0xB72513
+    .word RECTANGLE, 1, 1, 172, 311, 0xB72513
+    .word RECTANGLE, 1, 1, 173, 312, 0xB72513
+    .word RECTANGLE, 1, 1, 171, 310, 0xB72513
+    .word RECTANGLE, 2, 49, 120, 307, 0xB72513
+    .word RECTANGLE, 1, 1, 169, 308, 0xB72513
+    .word RECTANGLE, 1, 1, 169, 309, 0xB72513
+    .word RECTANGLE, 1, 1, 117, 311, 0xB72513
+    .word RECTANGLE, 1, 1, 117, 312, 0xB72513
+    .word RECTANGLE, 1, 1, 117, 313, 0xB72513
+    .word RECTANGLE, 1, 1, 173, 313, 0xB72513
+    .word RECTANGLE, 1, 1, 168, 309, 0xB72513
+    .word RECTANGLE, 3, 51, 119, 307, 0xB72513
+    .word RECTANGLE, 1, 1, 118, 310, 0xB72513
+    .word RECTANGLE, 1, 1, 120, 310, 0xB72513
+    .word RECTANGLE, 1, 1, 119, 310, 0xB72513
+    .word RECTANGLE, 1, 1, 118, 311, 0xB72513
+    .word RECTANGLE, 1, 1, 170, 310, 0xB72513
+    .word RECTANGLE, 1, 1, 171, 311, 0xB72513
+    .word RECTANGLE, 1, 1, 172, 312, 0xB72513
+    .word RECTANGLE, 1, 1, 170, 310, 0x121212
+    .word RECTANGLE, 1, 1, 171, 311, 0x121212
+    .word RECTANGLE, 1, 1, 120, 310, 0x121212
+    .word RECTANGLE, 1, 2, 170, 310, 0xB72513
+    .word RECTANGLE, 1, 1, 172, 311, 0xB72513
+    .word RECTANGLE, 1, 1, 171, 311, 0xB72513
+    .word RECTANGLE, 1, 1, 170, 310, 0x121212
+    .word RECTANGLE, 2, 1, 171, 311, 0x121212
+    .word RECTANGLE, 1, 1, 108, 302, 0xB72513
+    .word RECTANGLE, 1, 1, 116, 315, 0x121212
+    .word RECTANGLE, 1, 1, 170, 310, 0xB72513
+    .word RECTANGLE, 1, 1, 171, 311, 0xB72513
+    .word RECTANGLE, 2, 13, 120, 308, 0xB72513
+    .word RECTANGLE, 1, 3, 141, 312, 0xBEC5C5
+    .word RECTANGLE, 3, 1, 140, 313, 0xBEC5C5
+    .word RECTANGLE, 1, 3, 141, 316, 0xBEC5C5
+    .word RECTANGLE, 2, 1, 144, 313, 0xBEC5C5
+    .word RECTANGLE, 3, 3, 141, 313, 0x121212
+    .word RECTANGLE, 1, 3, 148, 312, 0xBEC5C5
+    .word RECTANGLE, 3, 1, 147, 313, 0xBEC5C5
+    .word RECTANGLE, 1, 2, 148, 316, 0xBEC5C5
+    .word RECTANGLE, 3, 1, 151, 313, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 150, 316, 0xBEC5C5
+    .word RECTANGLE, 3, 3, 148, 313, 0x121212
+    .word RECTANGLE, 6, 4, 171, 306, 0xB72513
+    .word RECTANGLE, 1, 1, 116, 312, 0xB72513
+    .word RECTANGLE, 1, 1, 115, 313, 0xB72513
+    .word RECTANGLE, 1, 1, 123, 314, 0x121212
+    .word RECTANGLE, 1, 1, 121, 310, 0x121212
+    .word RECTANGLE, 2, 1, 122, 310, 0x121212
+    .word RECTANGLE, 1, 1, 118, 312, 0xB72513
+    .word RECTANGLE, 1, 1, 119, 311, 0xB72513
+    .word RECTANGLE, 1, 1, 120, 309, 0xB72513
+    .word RECTANGLE, 1, 1, 120, 310, 0xB72513
+    .word RECTANGLE, 1, 46, 123, 309, 0x121212
+    .word RECTANGLE, 1, 1, 122, 309, 0x121212
+    .word RECTANGLE, 1, 1, 117, 314, 0x121212
+    .word RECTANGLE, 1, 1, 117, 315, 0x121212
+    .word RECTANGLE, 1, 1, 172, 314, 0x121212
+    .word RECTANGLE, 3, 8, 113, 296, 0xF54429
+    .word RECTANGLE, 1, 10, 114, 299, 0xF54429
+    .word RECTANGLE, 1, 1, 113, 298, 0xB72513
+    .word RECTANGLE, 1, 1, 113, 297, 0xB72513
+    .word RECTANGLE, 1, 1, 114, 299, 0xB72513
+    .word RECTANGLE, 2, 1, 170, 298, 0xF54429
+    .word RECTANGLE, 4, 5, 171, 296, 0xF54429
+    .word RECTANGLE, 4, 1, 176, 296, 0xF54429
+    .word RECTANGLE, 1, 2, 169, 299, 0xF54429
+    .word RECTANGLE, 1, 1, 169, 298, 0xF54429
+    .word RECTANGLE, 1, 1, 166, 298, 0xF54429
+    .word RECTANGLE, 1, 1, 124, 298, 0xF54429
+    .word RECTANGLE, 1, 1, 176, 299, 0xB72513
+    .word RECTANGLE, 1, 1, 177, 296, 0xF54429
+    .word RECTANGLE, 1, 1, 177, 297, 0xF54429
+    .word RECTANGLE, 1, 1, 177, 296, 0xF54429
+    .word RECTANGLE, 1, 1, 178, 296, 0xF54429
+    .word RECTANGLE, 1, 1, 112, 296, 0xF54429
+    .word RECTANGLE, 1, 1, 113, 297, 0xF54429
+    .word RECTANGLE, 2, 5, 174, 309, 0xF54429
+    .word RECTANGLE, 1, 1, 173, 310, 0xF54429
+    .word RECTANGLE, 1, 1, 173, 309, 0xF54429
+    .word RECTANGLE, 1, 1, 173, 310, 0xF54429
+    .word RECTANGLE, 1, 1, 171, 311, 0xF54429
+    .word RECTANGLE, 1, 1, 172, 310, 0xF54429
+    .word RECTANGLE, 2, 1, 178, 310, 0xF54429
+    .word RECTANGLE, 2, 1, 179, 310, 0xF54429
+    .word RECTANGLE, 1, 1, 179, 309, 0xF54429
+    .word RECTANGLE, 1, 1, 113, 311, 0xF54429
+    .word RECTANGLE, 1, 1, 116, 310, 0xF54429
+    .word RECTANGLE, 2, 7, 112, 310, 0xF54429
+    .word RECTANGLE, 1, 1, 111, 312, 0xF54429
+    .word RECTANGLE, 1, 2, 111, 311, 0xF54429
+    .word RECTANGLE, 1, 1, 118, 312, 0xF54429
+    .word RECTANGLE, 1, 1, 119, 311, 0xF54429
+    .word RECTANGLE, 2, 6, 112, 312, 0xF54429
+    .word RECTANGLE, 1, 6, 172, 311, 0xF54429
+    .word RECTANGLE, 1, 1, 180, 310, 0xB72513
+    .word RECTANGLE, 1, 1, 180, 311, 0xB72513
+    .word RECTANGLE, 1, 1, 180, 311, 0xB72513
+    .word RECTANGLE, 1, 1, 180, 311, 0x121212
+    .word RECTANGLE, 1, 1, 181, 310, 0x121212
+    .word RECTANGLE, 1, 1, 181, 302, 0xB72513
+    .word RECTANGLE, 1, 4, 174, 313, 0xF54429
+    .word RECTANGLE, 1, 1, 173, 313, 0xF54429
+    .word RECTANGLE, 1, 1, 178, 313, 0xF54429
+    .word RECTANGLE, 1, 7, 173, 312, 0xF54429
+    .word RECTANGLE, 2, 1, 172, 312, 0xF54429
+    .word RECTANGLE, 1, 6, 174, 309, 0xB72513
+    .word RECTANGLE, 1, 1, 173, 309, 0xB72513
+    .word RECTANGLE, 1, 1, 179, 310, 0xB72513
+    .word RECTANGLE, 1, 1, 156, 301, 0xB72513
+    .word RECTANGLE, 1, 1, 156, 303, 0x670D04
+    .word RECTANGLE, 1, 1, 133, 303, 0x670D04
+    .word RECTANGLE, 1, 1, 133, 304, 0x670D04
+    .word RECTANGLE, 1, 1, 157, 300, 0xB72513
+    .word RECTANGLE, 1, 1, 156, 300, 0xB72513
+    .word RECTANGLE, 1, 1, 155, 300, 0xB72513
+    .word RECTANGLE, 1, 1, 134, 300, 0xB72513
+    .word RECTANGLE, 1, 1, 138, 301, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 137, 301, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 136, 302, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 137, 303, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 138, 303, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 136, 304, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 137, 304, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 139, 304, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 140, 303, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 141, 302, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 142, 301, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 143, 302, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 143, 303, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 143, 304, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 142, 303, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 141, 303, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 144, 304, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 145, 303, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 146, 302, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 146, 301, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 147, 302, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 147, 303, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 148, 304, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 148, 303, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 148, 301, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 148, 302, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 150, 304, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 150, 303, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 150, 302, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 149, 301, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 150, 301, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 151, 301, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 153, 304, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 153, 302, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 153, 303, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 112, 278, 0x121212
+    .word RECTANGLE, 1, 1, 123, 267, 0x670D04
+    .word RECTANGLE, 1, 1, 121, 271, 0x0D2231
+    .word RECTANGLE, 1, 1, 120, 270, 0x0D2231
+    .word RECTANGLE, 1, 1, 121, 270, 0x0D2231
+    .word RECTANGLE, 1, 1, 121, 270, 0x0D2231
+    .word RECTANGLE, 1, 1, 121, 269, 0x0D2231
+    .word RECTANGLE, 1, 1, 119, 272, 0x0D2231
+    .word RECTANGLE, 1, 1, 119, 271, 0x0D2231
+    .word RECTANGLE, 1, 1, 115, 277, 0x670D04
+    .word RECTANGLE, 1, 1, 116, 278, 0x0D2231
+    .word RECTANGLE, 1, 1, 120, 270, 0x670D04
+    .word RECTANGLE, 1, 1, 116, 278, 0x670D04
+    .word RECTANGLE, 1, 1, 116, 278, 0x670D04
+    .word RECTANGLE, 1, 1, 116, 278, 0x0D2231
+    .word RECTANGLE, 1, 1, 116, 277, 0x0D2231
+    .word RECTANGLE, 1, 1, 117, 275, 0x0D2231
+    .word RECTANGLE, 1, 1, 120, 270, 0x0D2231
+    .word RECTANGLE, 1, 1, 173, 278, 0x0D2231
+    .word RECTANGLE, 1, 1, 171, 275, 0x0D2231
+    .word RECTANGLE, 1, 1, 168, 270, 0x0D2231
+    .word RECTANGLE, 1, 1, 116, 277, 0x670D04
+    .word RECTANGLE, 1, 1, 117, 275, 0x670D04
+    .word RECTANGLE, 1, 1, 120, 270, 0x670D04
+    .word RECTANGLE, 1, 8, 109, 316, 0x121212
+    .word RECTANGLE, 1, 1, 118, 315, 0x121212
+    .word RECTANGLE, 1, 1, 118, 314, 0x121212
+    .word RECTANGLE, 1, 1, 173, 315, 0x121212
+    .word RECTANGLE, 1, 1, 174, 315, 0x121212
+    .word RECTANGLE, 1, 1, 174, 316, 0x121212
+    .word RECTANGLE, 1, 2, 174, 316, 0x121212
+    .word RECTANGLE, 1, 1, 176, 316, 0x121212
+    .word RECTANGLE, 1, 1, 177, 316, 0x121212
+    .word RECTANGLE, 1, 1, 179, 316, 0x121212
+    .word RECTANGLE, 1, 1, 178, 316, 0x121212
+    .word RECTANGLE, 1, 1, 180, 316, 0x121212
+    .word RECTANGLE, 1, 1, 172, 315, 0x121212
+    .word RECTANGLE, 1, 1, 173, 316, 0x121212
+    .word RECTANGLE, 1, 1, 117, 316, 0x121212
+    .word RECTANGLE, 1, 1, 108, 293, 0xF54429
+    .word RECTANGLE, 1, 1, 162, 294, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 164, 294, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 166, 294, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 181, 294, 0xF54429
+    .word RECTANGLE, 1, 1, 108, 295, 0xF54429
+    .word RECTANGLE, 1, 1, 161, 295, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 163, 295, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 165, 295, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 167, 295, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 181, 295, 0xF54429
+    .word RECTANGLE, 1, 1, 108, 296, 0xF54429
+    .word RECTANGLE, 1, 1, 161, 296, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 162, 296, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 164, 296, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 167, 296, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 181, 296, 0xF54429
+    .word RECTANGLE, 1, 1, 108, 297, 0xF54429
+    .word RECTANGLE, 1, 1, 161, 297, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 163, 297, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 165, 297, 0xBEC5C5
+    .word RECTANGLE, 1, 1, 166, 297, 0xBEC5C5
+
+    .word VALOR_DE_CORTE
+
+car_5_end:
+
+        `;
+
+        // Function to load the application state from localStorage
+        function loadAppStateFromLocalStorage() {
+            try {
+                const savedState = localStorage.getItem('pixelArtState');
+                if (savedState) {
+                    const parsedState = JSON.parse(savedState);
+                    if (parsedState.drawnShapes) {
+                        drawnShapes = parsedState.drawnShapes;
+                    }
+                    if (parsedState.colorPalette) {
+                        colorPalette = parsedState.colorPalette;
+                        populateColorPalette(); // Repopulate palette with loaded colors
+                    }
+                    if (parsedState.zoomLevel) {
+                        zoomLevel = parsedState.zoomLevel;
+                        zoomLevelDisplay.textContent = `${zoomLevel}x`;
+                    }
+                    if (parsedState.panOffset) {
+                        panOffset = parsedState.panOffset;
+                    }
+                    // Initialize history with the loaded state
+                    history = [JSON.parse(JSON.stringify(drawnShapes))];
+                    historyIndex = 0;
+                    redrawCanvas();
+                    updateUndoRedoButtons();
+                    // console.log("App state loaded from localStorage.");
+                    return true; // State loaded successfully
+                }
+            } catch (error) {
+                console.error("Error loading state from localStorage:", error);
+            }
+            return false; // No state found or error
+        }
+
+        // Initial setup
+        // Try to load state from localStorage first
+        const stateLoaded = loadAppStateFromLocalStorage();
+
+        // If no state was loaded from localStorage, use preloadData
+        if (!stateLoaded) {
+            drawnShapes = loadShapesFromAssembly(preloadData);
+            saveState(); // Save this initial state to localStorage and history
+        }
+
+        populateColorPalette(); // Ensure palette is populated (either loaded or default)
+        updateColorDisplay();
+        redrawCanvas(); // Initial draw of the canvas
+    </script>
+</body>
+</html>
